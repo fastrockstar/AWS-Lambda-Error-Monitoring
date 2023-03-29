@@ -8,10 +8,12 @@ from aws_cdk import (
     core
 )
 import aws_cdk.aws_iam as iam
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 
 class LambdaMonitoringStack(core.Stack):
-    def __init__(self, scope: core.Construct, id: str, lambda_func: _lambda.Function, bucket_name: str, **kwargs) -> None:
+    def __init__(self, scope: core.Construct, id: str, lambda_func: _lambda.Function, bucket_name: str, slack_token: str, slack_channel: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
 
         # Create an S3 bucket to store the CSV file
@@ -51,7 +53,7 @@ class LambdaMonitoringStack(core.Stack):
         # Add an action to the alarm to publish to the SNS topic
         alarm.add_alarm_action(cw.SnsAction(topic))
 
-        # Create a Lambda function to export error logs to S3
+        # Create a Lambda function to export error logs to S3 and send Slack notifications
         export_function = _lambda.Function(
             self, "ExportFunction",
             runtime=_lambda.Runtime.PYTHON_3_8,
@@ -60,6 +62,8 @@ class LambdaMonitoringStack(core.Stack):
             environment={
                 "BUCKET_NAME": bucket.bucket_name,
                 "LOG_GROUP_NAME": log_group.log_group_name,
+                "SLACK_TOKEN": slack_token,
+                "SLACK_CHANNEL": slack_channel,
             },
             role=iam.Role.from_role_arn(
                 self, "Role", role_arn=lambda_func.role.role_arn,
@@ -73,13 +77,3 @@ class LambdaMonitoringStack(core.Stack):
         bucket.add_object_created_notification(
             s3_notifications.LambdaDestination(export_function)
         )
-
-app = core.App()
-lambda_func = _lambda.Function(self, "MyFunction",
-                                runtime=_lambda.Runtime.PYTHON_3_8,
-                                handler="index.handler",
-                                code=_lambda.Code.from_asset("lambda_function"))
-
-LambdaMonitoringStack(app, "LambdaMonitoringStack", lambda_func, bucket_name="my-bucket")
-
-app.synth()
